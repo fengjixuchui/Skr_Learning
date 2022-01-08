@@ -372,3 +372,299 @@ AST-Fuzz - 扩展类型系统
   > 再一种就是生成诸如 **'\xXX'** 这样的字符。这种字符将在 JS 代码层面展示的很好，而具体的字符串将在 adobe 解析所构造的 JS 代码时动态产生 unicode 字符。
 
 - 理了理关于 CS 架构程序的 fuzz 思路。
+
+## 第71周（2021.9.20-2021.9.26）
+
+> 突然发现很久没有写博客了。以后除了研究比较大块的内容以外，其他的一点点笔记或思路就直接记录在 learn list 里。
+>
+> 不然一小点笔记就开一篇新博文感觉有点浪费（逃）
+
+- **Favocado [论文](https://www.ndss-symposium.org/ndss-paper/favocado-fuzzing-the-binding-code-of-javascript-engines-using-semantically-correct-test-cases/)与[源代码](https://github.com/favocado/Favocado)学习**。
+
+  整体上分为两部分，分别是
+
+  - 生成语法和语义正确的测试用例
+  - 减少fuzz时的输入空间
+
+  对于第一部分，
+
+  1. Favocado解析 API 信息。获取 binding code 的完整语义信息，包括但不限于方法参数与返回值类型、个数等等
+  2. 之后在预定义的语句格式中随机选择 JS 语句格式，并利用当前的binding code 语义信息以及所维护的上下文类型信息等等进行填空，以尽量满足语法语义的正确性。
+
+  对于第二部分：根据 API 的关联性，构建不同的 binding code 以及各类 native API 之间的关联性，并划分等价类。之后的变异就基于等价类来变异，这样可以降低无关类型的输入，大幅度降低输入空间。
+
+  如果不想啃论文可以直接看看这个简约版 - [白泽带你读论文 | Favocado - 知乎](https://zhuanlan.zhihu.com/p/378952042)
+
+- 简单瞄了几种 hook 技术，只是看了看没写代码
+
+  > inline hook 有点有趣，想找个机会研究一下，可惜最近有点忙。
+  
+- 打算看看 fuzz 的 [结构感知](https://github.com/google/fuzzing/blob/master/docs/structure-aware-fuzzing.md)，试着写写 CTF 菜单题的 fuzz 模板  
+
+## 第72周（2021.9.27-2021.10.3）
+
+- 接上面，使用 protobuf 搭配 AFL++ (qemu mode & QASAN）做了个简易 CTF fuzz。
+
+  因为只是抱着研究学习的目的来做它，所以实际上用起来可能会比较难用（笑）
+
+- 报了一个 Debug 模式下才会触发的 SQLite UAF，被谷歌毙了（哭泣）。
+
+- 简单读了读 [Coming : a Tool for Mining Change Pattern Instances from Git Commits](https://arxiv.org/pdf/1810.08532.pdf) 论文。这篇论文大体上介绍了一个从 Git 仓库历史提交信息中**获取指定代码模式信息**的工具。
+
+  它可以：
+
+  1. 遍历所有历史 commit 信息
+  2. 分析相邻 commit  的细粒度 diff 更改
+  3. 在这些 diff 更改中检测 change pattern instance
+  4. 计算代码更改频率
+  5. 将分析结果用 JSON 格式输出等等
+  
+  该论文所对应的项目代码在这里： [SpoonLabs/coming：A tool for mining commits from Git repositories and diffs to automatically extract code change pattern instances and features with ast analysis](https://github.com/SpoonLabs/coming)。
+
+- 在课程上花费的时间有亿点点多，而且这周状态也不太好，自我检讨一下。
+
+- Kernel pwn CTF 入门，配环境踩坑配了两天；同时也在阅读 *Linux Device Drivers* 这本书。
+
+## 第73周（2021.10.4-2021.10.10）
+
+- 接上面，Kernel Pwn CTF 简单入了个小门，写了点记录但还没写完，还差一点 ROP 利用，先不传了。
+- 这周摸了，没怎么学技术，在写一堆红色材料，写不完了......
+
+  > 生活就像是操作系统，总会有事情会抢占掉当前运行的进程。
+
+- 之前报的一个 facebook OOB read vulnerability 准备发 bounty 了。
+  虽然不多，但毕竟是第一笔 bug bounty，感觉相当不错。
+
+## 第74周（2021.10.11-2021.10.17）
+
+- 完善了剩下的 Kernel Pwn CTF 入门笔记 - [传送门](https://kiprey.github.io/2021/10/kernel_pwn_introduction/)
+
+- 继续写红色材料......
+
+- 简单练了几题算法题
+
+- 阅读一个有趣的论文 [FUZZIFICATION: Anti-Fuzzing Techniques](https://www.usenix.org/system/files/sec19fall_jung_prepub.pdf)
+
+  - 三方面来降低 fuzz 效率
+
+    - speedbump:
+
+      - 首先使用给定 testcase 来识别 cold path(正常执行很少或几乎不访问的路径)，并在 code path 中**插入 delay 语句**以较大幅度提高程序运行时间
+
+        > 注：大部分情况下，普通用户几乎很少会进入 cold path，但 fuzz 就是为了探测 cold path 中的 bug，因此会经常进入。
+
+      - 插入 delay 语句后与先前定义的执行开销进行对比。如果低于预定开销则继续注入 delay 语句，高于则减少注入的 delay 语句
+
+      - 抗分析：为了防止被简单的 patch 掉，这里使用 CSmith 生成动态算术运算代码，而不是常规的 sleep。
+
+        同时为了防止被 deadcode elimination 优化掉，这里还修改 CSmith 以生成**具有数据依赖和原始代码依赖**的代码，具体一点就是涉及到了**全局变量的修改**。
+
+    - branchtrap:
+
+      - 根据 ROP 思维实现的代码重用，在大量函数内部插入**输入敏感**的跳转，显著改变执行路径，诱导基于coverage的fuzz更多关注无 bug 路径（因为发现了**“新”**路径）
+      - 在 cold path 里引入大量**确定性分支**，迅速占满 fuzz 的 coverage bitmap，使得 fuzz 大量产生 hash 冲突，影响或减缓发现新路径的过程。
+
+    - antihybrid：
+
+      - 使用特定模板引入**隐式数据流依赖**，提高数据流污点分析的开销与难度
+
+        例如简单的 int 赋值操作，硬是要拿个循环跑。
+
+      - 插入大量假符号以触发符号执行中的路径爆炸
+
+        例如将 if 条件判断中的简单判断语句，替换成**两个操作数进行 CRC 校验后的值的比较语句**，额外引入了 CRC 校验代码，即大量假符号
+
+      - 缺点：容易被攻击者使用**代码模式检测方式**检测出来，因为模板是不变的
+
+  - 这里有个别人整理的总结可以简单看看(比我这里写的详细不少) - [《fuzzification》论文阅读 - CSDN](https://blog.csdn.net/qq_40398985/article/details/103586567)
+
+## 第75周（2021.10.18-2021.10.24）
+
+- 准备校级评优材料
+
+- 将 IR-Fuzz 融合进 AFL，同时也融合进 AST-fuzz 中以提高 fuzz 质量
+
+- 最近新报的一个漏洞被 facebook 毙了，可惜。不过最早报的那个漏洞流程快走完了，快乐。
+
+- 重启 WebServer，几乎修复所有已知错误，并完善了连接爆满的错误处理，完善了日志输出的方式。
+
+  > 就差最后一个 bug 还没调通：一个多进程x多线程的条件竞争漏洞，怎么调也调不出来，有点难顶。
+
+## 第76周（2021.10.25-2021.10.31）
+
+- WebServer 最后一个 bug 终于调通了，**并非**条件竞争漏洞。
+
+  > 珍爱生命，请对每个创建文件描述符的地方使用 O_CLOEXEC
+
+  至此，WebServer 彻底结项。
+
+- 阅读了 [MemFix: Static Analysis-Based Repair of Memory Deallocation Errors for C](http://prl.korea.ac.kr/~junhee/papers/FSE18.pdf) 论文，感觉有之前大二寒假实习中，学习流敏感指针分析的味道了......
+
+  同时也尝试复现并跑通上面这篇论文里的所有测试与实验。
+
+- 阅读论文 [Low-Tech Steganography for Covert Operations](https://www.researchgate.net/publication/330243139_Low-Tech_Steganography_for_Covert_Operations)，主要讲解了一个使用低级隐写技术（即无需任何高速计算机就可完成的隐写技术）来巧妙隐藏一些秘密文本。
+
+  > 这个就不写笔记了，论文很简单，读起来非常快。
+
+- 阅读论文 [AddressSanitizer: A Fast Address Sanity Checker](https://www.usenix.org/system/files/conference/atc12/atc12-final39.pdf) 论文，了解了早期 Asan 技术的相关设计方式。
+
+## 第77周（2021.11.1-2021.11.7）
+
+- 写了一个 fuzz crash 分类工具，思路是通过 ptrace 将 crash 时的栈帧 hash 成一条哈希值，相同哈希值的 crash 被分为同一类 crash（[ptrace version src](https://github.com/Kiprey/CrashUniquer)）
+
+  > 该思路源于 trapfuzz。
+
+- 阅读 Address Sanitizer LLVM 3.1 最早期的源代码。
+
+  - Asan 使用 8 字节映射至 1字节的粗粒度内存映射。每块虚拟内存都会对应一块 shadow memory。
+
+    > 8字节的粗粒度，是因为 malloc 返回地址会对齐8字节。
+
+    其中 shadow byte 上的值表示 origin memory 中前 n 个字节是可访问的。
+
+  - Asan 会在 LLVM pass 过程的末尾，对所有的内存读写操作进行插桩，检查当前访问的内存地址所对应的 shadow byte 的值是否说明当前地址可访问。如果不可访问则直接abort。
+
+  - 对于溢出检测，asan 会在用户内存的**左右**两边分别加上一块大小固定的 redzone，其中 redzone 所对应的 shadow memory 将会被加毒。这样当访问到 redzone 时将触发 asan。
+
+    > 加毒（poison) 指的是将某块用户内存所对应的 shadow memory 标记为不可访问。
+
+  - 对于栈内存来说，它会先分配一块 **原始栈大小 + (等待被 redzone 检测的变量个数 + 1) * redzone 大小**的内存，然后修改那些目标变量的 alloc 指令的偏移量。（poisonStackInFunction 函数）
+
+    之后，将一些栈上的信息放入当前栈帧最左边的 redzone里。
+
+    在函数头部，插入给当前栈帧 redzone 加毒的操作；并在所有 ret 语句之前插入 redzone 解毒的操作。
+
+    对于当前函数，若当前函数执行了一些 noret 的函数（例如 exit、execve），则在执行这些 noret 函数之前，必须对其解毒，防止误报。处理 no ret call 是为了防止有不返回的函数调用导致调用后栈上的 poison 信息没有被处理。
+
+  - 但需要注意的是，asan 只会在**全局变量**的**右边**加 redzone。 （insertGlobalRedzones 函数）
+
+    同时，虽然全局变量的 redzone 的添加操作是以插桩的形式加入程序中，但全局变量的加毒解毒操作是位于 runtime 中。
+
+  - Asan 会 hook memcpy 等内存处理或字符串处理的 lib 函数，以达到更好的效果。（InitializeAsanInterceptors 函数）
+
+  - asan 除了检测 内存越界读写以外，它同样检测 UAF 和 use after return。
+
+    - UAF
+
+      asan hook 掉了 malloc、free、realloc 等函数，创建了自己的内存管理机制，在分配内存时对内存解毒，在释放内存时加毒。
+
+      对于动态分配的内存，一共有三种主要状态，分别是：可分配、检疫、已分配。当某个内存块被释放时，该内存块将会被设置为**检疫**状态，并放置到检疫队列中。等到检疫队列数量超过阈值后，再将其中的检疫内存放回可分配内存池中。这样做的目的是为了**延长某块内存从被释放到被二次分配的过程**，延长检测 UAF 的窗口期。
+
+    - use after return
+
+      在替换栈帧上原始 alloc 为新 alloc 之前，asan 会先分配一块 fake stack, 然后在替换 alloc 指令时，将其地址替换为 fake stack。这样，带有 redzone 的局部变量就会 alloc 在 fake stack 上，而不是 origin stack。
+
+      在当前函数结束时，fake stack 会被重新加毒，注意此时**不会回收** fake stack。
+
+      那么 fake stack 在什么时候被回收呢？在分配 fake stack时。分配时会同步检测 fake stack 的调用栈，遍历调用栈中的每个 fake stack，判断当前 fake stack 所对应的 real_stack 地址是否大于当前的运行时栈。如果大于则说明该 fake stack 已经没有用处了，因此将会被释放。
+
+  - asan 第一版存在局限性，例如不会检测到**结构体成员之间内存对齐的那一小部分内存**的越界，以及不会检测这种越界到**另一块用户可读写内存**中的情况等等，不过总体上实现效果非常优秀。
+
+  > 这里感谢 sad 师傅分享的笔记。
+
+- 将一个新的 IR-Fuzz 融合进 ast-fuzz，同时修复一些遗留bug。
+
+- 进军 CS144 计算机网络实验，共Lab0- Lab7 八个实验，开始给自己充充电。
+
+  本周已完成 Lab0、Lab1。
+
+- 报了一堆不知道fb认不认的洞上去，坐等消息。
+
+## 第78周（2021.11.8-2021.11.14）
+
+- CS144 计网实验 Lab2 - Lab3
+
+  > Lab4已经跑通全部测试样例，就差对真实网络TCP请求的调试。
+
+- 漏洞被毙了，噩耗。不过又尝试开始新的挖洞方向。
+
+## 第79周 （2021.11.15-2021.11.21）
+
+- HNU 期中考试周（1/2）
+
+- CS144 计网实验 Lab4（TCP实现组装）、Lab5（网络接口实现）、Lab6 （IP路由实现）、Lab7
+
+  > 至此，CS144 计网实验彻底结项。
+
+- IR-Fuzz 启航
+
+## 第80周（2021.11.22-2021.11.28）
+
+- HNU 期中考试周（2/2）
+- syzkaller 入门使用
+- 阅读论文 [SHARD: Fine-Grained Kernel Specialization with Context-Aware Hardening](https://www.cs.purdue.edu/homes/pfonseca/papers/sec21-shard.pdf)
+
+- 重新实现了一个 Crash 分类工具，基于 gdb 和 trap-fuzz 原理 - [CrashUniquer](https://github.com/Kiprey/CrashUniquer)。
+- 修补 fuzz bug，调试语义
+
+> 最近期中周，课程作业有亿点点多....
+
+- 整了一下 protobuf + libfuzzer
+  - 发现了AFL++的一个 bug
+  - 对 libprotobuf-mutator 项目完全研究了一下，了解了其具体变异实现
+  - 重新对先前的研究进行改进
+
+## 第81周（2021.11.29-2021.12.5）
+
+- 阅读论文 [HEALER: Relation Learning Guided Kernel Fuzzing](http://www.wingtecher.com/themes/WingTecherResearch/assets/papers/healer-sosp21.pdf)
+- 阅读论文 [VScape: Assessing and Escaping Virtual Call Protections](https://www.usenix.org/conference/usenixsecurity21/presentation/chen-kaixiang)
+- 阅读论文 [CollAFL: Path Sensitive Fuzzing](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8418631)
+- 阅读论文 [Counterfeit Object-oriented Programming](https://www.syssec.ruhr-uni-bochum.de/media/emma/veroeffentlichungen/2015/03/28/COOP-Oakland15.pdf)
+- 阅读论文[SoFi: Reflection-Augmented Fuzzing for JavaScript Engines](https://dl.acm.org/doi/10.1145/3460120.3484823)
+
+- 简单看了看 [上下文敏感的 AFL++ 插桩技术](https://github.com/AFLplusplus/AFLplusplus/blob/stable/instrumentation/README.ctx.md)
+- 粗略阅读 Linux-2.6.24 源码中关于共享内存、信号量的实现
+
+## 第82周（2021.12.6-2021.12.12）
+
+- 阅读论文 `VulDeeLocator: A Deep Learning-based Fine-grained Vulnerability Detector`
+- 刷了六题 reversing.kr 
+- 各类课程实验、大作业
+- 加入老师的课题组，参与寒假实习
+
+## 第83周（2021.12.13-2021.12.19）
+
+- 在 Windows VMware 上配置了一个 MacOS
+
+  > 真不容易......
+
+- 去深圳打 CCF CCSP 国赛，陪跑。
+
+  > 可惜了......
+  
+- 准备两项考试
+
+## 第84周（2021.12.20-2021.12.26）
+
+- 密码学课程设计
+  - 使用 OpenSSL 实现 DH 协议认证 + 消息完整性检测 + 来源验证
+  - 使用 OpenSSL 创建公钥私钥以及证书，实现了一个简易 SSL 层 Echo Server 交互
+  
+  > 密码学真有意思。
+  
+- 学习 MacOS 的 Mach IPC
+
+  - 阅读 *OS Internal Vol II 中的 IPC 机制
+  - 尝试编写代码，深入理解 Mach API。
+
+- 刷 pwn college
+
+- 做了其他细碎的事情
+
+## 第85周（2021.12.27-2022.1.2）
+
+- 继续阅读网上的博客和 *OS internal 学习 mach IPC。
+
+- 课程设计/课程报告
+
+- 刷了点 pwn college ，学到 ROP 了
+
+  > 带 JIT 的 yan85 可真有趣。
+
+- 元旦快乐！
+
+## 第86周（2021.1.3-2021.1.9）
+
+- HNU 期末考试周（1/2）
+- 简单入门了一下 MacOS XPC，看了点 MacOS Sandbox 基础知识
+- 正在学习 35c3ctf 中的 pillow 题，这一题是 MacOS IPC 相关的一道沙箱逃逸题目。
