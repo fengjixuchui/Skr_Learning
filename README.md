@@ -514,53 +514,7 @@ AST-Fuzz - 扩展类型系统
 
   > 该思路源于 trapfuzz。
 
-- 阅读 Address Sanitizer LLVM 3.1 最早期的源代码。
-
-  - Asan 使用 8 字节映射至 1字节的粗粒度内存映射。每块虚拟内存都会对应一块 shadow memory。
-
-    > 8字节的粗粒度，是因为 malloc 返回地址会对齐8字节。
-
-    其中 shadow byte 上的值表示 origin memory 中前 n 个字节是可访问的。
-
-  - Asan 会在 LLVM pass 过程的末尾，对所有的内存读写操作进行插桩，检查当前访问的内存地址所对应的 shadow byte 的值是否说明当前地址可访问。如果不可访问则直接abort。
-
-  - 对于溢出检测，asan 会在用户内存的**左右**两边分别加上一块大小固定的 redzone，其中 redzone 所对应的 shadow memory 将会被加毒。这样当访问到 redzone 时将触发 asan。
-
-    > 加毒（poison) 指的是将某块用户内存所对应的 shadow memory 标记为不可访问。
-
-  - 对于栈内存来说，它会先分配一块 **原始栈大小 + (等待被 redzone 检测的变量个数 + 1) * redzone 大小**的内存，然后修改那些目标变量的 alloc 指令的偏移量。（poisonStackInFunction 函数）
-
-    之后，将一些栈上的信息放入当前栈帧最左边的 redzone里。
-
-    在函数头部，插入给当前栈帧 redzone 加毒的操作；并在所有 ret 语句之前插入 redzone 解毒的操作。
-
-    对于当前函数，若当前函数执行了一些 noret 的函数（例如 exit、execve），则在执行这些 noret 函数之前，必须对其解毒，防止误报。处理 no ret call 是为了防止有不返回的函数调用导致调用后栈上的 poison 信息没有被处理。
-
-  - 但需要注意的是，asan 只会在**全局变量**的**右边**加 redzone。 （insertGlobalRedzones 函数）
-
-    同时，虽然全局变量的 redzone 的添加操作是以插桩的形式加入程序中，但全局变量的加毒解毒操作是位于 runtime 中。
-
-  - Asan 会 hook memcpy 等内存处理或字符串处理的 lib 函数，以达到更好的效果。（InitializeAsanInterceptors 函数）
-
-  - asan 除了检测 内存越界读写以外，它同样检测 UAF 和 use after return。
-
-    - UAF
-
-      asan hook 掉了 malloc、free、realloc 等函数，创建了自己的内存管理机制，在分配内存时对内存解毒，在释放内存时加毒。
-
-      对于动态分配的内存，一共有三种主要状态，分别是：可分配、检疫、已分配。当某个内存块被释放时，该内存块将会被设置为**检疫**状态，并放置到检疫队列中。等到检疫队列数量超过阈值后，再将其中的检疫内存放回可分配内存池中。这样做的目的是为了**延长某块内存从被释放到被二次分配的过程**，延长检测 UAF 的窗口期。
-
-    - use after return
-
-      在替换栈帧上原始 alloc 为新 alloc 之前，asan 会先分配一块 fake stack, 然后在替换 alloc 指令时，将其地址替换为 fake stack。这样，带有 redzone 的局部变量就会 alloc 在 fake stack 上，而不是 origin stack。
-
-      在当前函数结束时，fake stack 会被重新加毒，注意此时**不会回收** fake stack。
-
-      那么 fake stack 在什么时候被回收呢？在分配 fake stack时。分配时会同步检测 fake stack 的调用栈，遍历调用栈中的每个 fake stack，判断当前 fake stack 所对应的 real_stack 地址是否大于当前的运行时栈。如果大于则说明该 fake stack 已经没有用处了，因此将会被释放。
-
-  - asan 第一版存在局限性，例如不会检测到**结构体成员之间内存对齐的那一小部分内存**的越界，以及不会检测这种越界到**另一块用户可读写内存**中的情况等等，不过总体上实现效果非常优秀。
-
-  > 这里感谢 sad 师傅分享的笔记。
+- 阅读 Address Sanitizer LLVM 3.1 最早期的源代码，笔记上传至博客上。
 
 - 将一个新的 IR-Fuzz 融合进 ast-fuzz，同时修复一些遗留bug。
 
@@ -578,7 +532,7 @@ AST-Fuzz - 扩展类型系统
 
 - 漏洞被毙了，噩耗。不过又尝试开始新的挖洞方向。
 
-## 第79周 （2021.11.15-2021.11.21）
+## 第79周（2021.11.15-2021.11.21）
 
 - HNU 期中考试周（1/2）
 
@@ -663,8 +617,158 @@ AST-Fuzz - 扩展类型系统
 
 - 元旦快乐！
 
-## 第86周（2021.1.3-2021.1.9）
+## 第86周（2022.1.3-2022.1.9）
 
 - HNU 期末考试周（1/2）
 - 简单入门了一下 MacOS XPC，看了点 MacOS Sandbox 基础知识
-- 正在学习 35c3ctf 中的 pillow 题，这一题是 MacOS IPC 相关的一道沙箱逃逸题目。
+- 完成 35c3ctf 中 pillow 题的学习，这一题是 MacOS IPC 相关的一道沙箱逃逸题目
+- 简单了解一下 xpcspy，主要基于 frida hook 来获取目标进程的 XPC 消息（突然想起之前的腾讯面试题）
+
+## 第87周（2022.1.10-2022.1.16）
+
+- HNU 期末考试周（2/2）
+- 准备开始寒假实习科研，研究 macOS 内核漏洞挖掘
+  - 阅读论文 《IMF: Inferred Model-based Fuzzer》
+  - 阅读论文《iDEA: Static Analysis on the Security of Apple Kernel Drivers》，学习了一些关于 IOKit 相关的结构与用法
+  - 阅读论文《SyzGen: Automated Generation of Syscall Specification of
+    Closed-Source macOS Drivers》
+- pwn college 继续
+
+## 第88周（2022.1.17-2022.1.23）
+
+- 复现 IMF 中的实验。受限于 MacOS 版本，复现实验时遇到了一些版本上的问题。同时完整梳理了一下 IMF 的内容，写了写笔记。还顺便给 IMF 修了个 Bug。
+- 做了一些 pwn college，快整完了
+- 玩玩 rwctf，只会最菜的 baby 题。等着赛后复盘。
+
+## 第89周（2022.1.24-2022.1.30）
+
+- 复盘 RWCTF 中的 Who Move My Block 以及 QLaas。学习使用 Codeql 对 nbd 进行审计。
+
+- IMF 实验抽空结束掉了，准备复现 SyzGen 的实验，又安装了一个 MacOS 10.15 的虚拟机。
+
+  > 1T 固态就这么快被各个虚拟机给吃完了......
+
+- 完成 RWCTF 中的 FLAG 题的复盘。
+
+## 第90周（2022.1.31-2022.2.6）
+
+- 新年快乐！
+- 复盘 RWCTF 中的 hso 题，这题和 pj0 那个 iMessage 0-click RCE 有着高相关性（而且有亿点点难）。
+- 摸了，参加一些聚会和酒席
+
+## 第91周（2022.2.7-2022.2.13）
+
+- 完成 RWCTF hso 题的笔记编写
+
+- 开始做 Syzgen 实验的复现。复现到一半发现 Windows 机器下 VMware MacOS 不能网络调试另一台 VMWare MacOS，真是太折腾了......
+
+  找学姐借了一台 macbook pro 远程 teamviewer 控制来做实验......
+
+## 第92周（2022.2.14-2022.2.20）
+
+- 协助做 Fuzzing 论文的整理
+
+- 完成 SyzGen 实验的复现
+
+  - 基本跑通了 SyzGen的代码
+  - 因为 xcode 编译出的驱动不能在 VM 上跑折腾了好久......
+  - 完成 SyzGen 复现论文的文档编写
+
+周报实在水不下去了，这里简单记录一下 `xcode 编译出的驱动不能在 VM 上跑` 这个的~~踩坑~~解决过程：
+
+- 初始时，kextload 时提示 `kext start fail(result: 0x5)`，查看 log 时发现在 kextutil 报错前有些语句：
+  
+    ```log
+    2022-02-18 06:35:53.512950-0800 0x250 Default 0x0 0 0 kernel.development: (47E46FA4-9B3F-38FA-9600-4F71D76491E3) <compose failure [UUID]>)
+  ```
+  
+  除此之外没有 hook_start（自定义 kext 的名称为 `hook`，其 start 函数为 hook_start） 函数中 print 出的 `[hook_start] start kext` 这种信息，因此**初步认为 kext 在执行 start 前就挂了**。
+  
+- 一系列踩坑暂且不表，包括但不限于重新装了一台 10.15.4 版本的 MacOS 等等。
+  
+- 后来 lldb 直接调试 XNU 中的 `OSKext::load` 方法，发现其实 hook_start 已经执行了，printf 函数也跑了，但是 log 就是没有正常的输出，包括 dmesg 里也没有信息，这就奇了怪了。
+  
+- 之后我在 kext start 里增加了个循环，循环调用 printf 50次，之后再跑一次。这下才知道，原来之前说的那个报错 `<compose failure [UUID]>` 就是对应于输出的日志，只是可能因为其他缘故所以不能正常输出; 
+  
+  然后在 dmesg 里也能看到输入的日志了，这应该是因为日志相关的缓存机制吧。
+  
+    > 太折腾了......
+
+调试时还看到 angr 的有趣之处：给 angr 加装个 lldb proxy，这样 angr 就可以通过这个 lldb proxy 访问 kernel 中的任何内存数据，等价于把整个 kernel 做个 memory snapshot 再打包给 angr 做符号执行。这个设计非常的有意思。
+
+## 第93周（2022.2.21-2022.2.27）
+
+- 简单看了下 unicorefuzz。
+
+- 仔细研究了一下 e9patch 的论文，了解其内部机理，顺便写了下笔记留待以后分享。
+
+- 项目需求，机器学习入门。
+
+- 读了一下 HFL 和 MoonShine 的论文，了解了一下它们在 kernel fuzz 中是如何解决某一种问题的方案。
+
+- Codegate CTF 摸了会，对着题目学习如何编写 syzkaller template
+
+  有道题 `forgotten` 很有意思：
+
+  >kernel driver 为当前进程创建 vma 时，往 `vma->vm_private_data` 里塞了一个指向内核对象 entry 的指针。
+  >当进程 fork 一份时，新进程也会完整复制这个 vma，使得**有两个进程持有了指向 entry 的指针**。
+  >随后当新进程死亡时，entry 对象被释放。但是**另一个进程仍然持有指向 entry 的指针**，造成 kernel uaf。
+
+## 第94周（2022.2.28-2022.3.6）
+
+- syzkaller 源码阅读。主要关注 syzkaller 如何解析 syzlang，以及其变异策略（一步一步来嘛）
+
+- 阅读论文 `NTFUZZ: Enabling Type-Aware Kernel Fuzzing on Windows with Static Binary Analysis`
+
+  这篇论文提出了一种方法：从那些 documented 的 API 函数，通过静态分析技术一步步往下推断出 undocumented 的 syscall API 参数类型，并对其进行 fuzz。
+
+  里面涉及的一些关于静态分析的东西还是有点模糊，不太能看懂。
+
+- 阅读论文 `Scalable Fuzzing of Program Binaries with E9AFL`。
+
+  e9afl 是一个可对无符号二进制程序插桩实现覆盖率反馈的工具，插桩后的程序可以直接用于 AFL 中进行 fuzz。相对于其他针对纯二进制文件进行 fuzz 的方法，它的优势在于插桩后的 overhead 还能保证在较低水平，同时还保证较高的精度。
+
+- 修复了一下 github page 无法更新的缘故，原来是自己上传的 md 中 yaml 格式出现了问题，导致 github 部署时解析错误。
+
+  这就使得我的博客处于薛定谔的状态，更了，但没完全更.....
+
+- 修复了先前复现 SyzGen 实验时没完全跑起来的覆盖率检测，被提供的文档给坑了。
+
+- Facebook CVE++
+
+- 尝试通过 SyzGen 测试一些驱动，看看带有 breakpoint coverage 和不带有时的 fuzz，其效率相差的如何。
+
+  > 测试的时候跑出了某驱动的一个空指针漏洞。（没想到还真能在复现时跑出漏洞.....）
+  
+  效率相差大概是将近 10x 左右，而且随着覆盖率的加大，带有 breakpoint coverage 的 syzkaller 执行速度会越来越慢。
+  
+  > 10x 算低的了，这还是因为 trace 的是单个驱动的覆盖率。
+  
+- 整理了一下周报，将一些较为大块的笔记挪到博客上了，使得周报更简洁一点。
+
+## 第95周（2022.3.7-2022.3.13）
+
+- 求助了学长，完成 NTFuzz 论文的阅读，理解了其中静态分析的大部分内容。
+
+- 简单看了看 IOKit UserClient 接口逆向，为下周的逆向工作做准备。
+
+- 继续 syzkaller 源码阅读，编写笔记梳理整个逻辑流程。 
+
+  > 目前已经完成 syz-extract、syz-sysgen 的源码笔记编写。
+  >
+  > syz-manager、 syz-fuzzer 以及 syz-executor 由于内容较多，联系紧密，因此其笔记编写不能在短时间内完成，只能慢慢利用碎片时间来磨。
+
+- 看了点 afl-net，学习一下它的基本用法与实现原理
+
+## 第96周（2022.3.14-2022.3.20）
+
+- AFL + AFLNet 培训
+- 开始辅助逆向一些闭源 IOKit Driver。目前初期只是边逆向边看开源 driver 代码，学习驱动的代码模式。
+- 课程实验
+
+## 第97周（2022.3.21-2022.3.27）
+
+- IOKit 逆向，积攒了一些逆向 IOKit Driver 的经验
+- 看了点 syzkaller 代码，慢慢磨吧。然后还简单的做了一个 syzkaller 源码导读分享
+- 完善先前的 ast-fuzz。尝试从已有的 jackalope 项目中提取出一个独立的 AFL-fuzz，用来持续为 AST-fuzz 提供语料。
+- HNU 封校了，其余杂事只会更多......
